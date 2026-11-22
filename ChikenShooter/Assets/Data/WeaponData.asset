@@ -1,0 +1,20 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 514eaadf7cf906140a232b556a54ca11, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  weaponName: Laser
+  sprite: {fileID: 0}
+  projectilePrefab: {fileID: 5919140067106235292, guid: 0e7fe389821018a4b97826babb1465c3, type: 3}
+  damage: 1
+  projectileSpeed: 12
+  fireRate: 0.18
