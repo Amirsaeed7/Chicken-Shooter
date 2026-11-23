@@ -28,6 +28,7 @@ public class BossController : MonoBehaviour
         health = maxHealth;
         state = BossState.EggRain;
         stateTimer = 5f;
+        shotTimer = 2f;
     }
 
     public void Configure(float health, EnemyEgg eggPrefab, Enemy miniEnemyPrefab)
@@ -55,7 +56,7 @@ public class BossController : MonoBehaviour
                 if (shotTimer <= 0f)
                 {
                     ShootEggCluster();
-                    shotTimer = 0.8f;
+                    shotTimer = 2f;
                 }
                 break;
             case BossState.Dive:
@@ -63,7 +64,7 @@ public class BossController : MonoBehaviour
                 if (shotTimer <= 0f)
                 {
                     ShootEggCluster();
-                    shotTimer = 1f;
+                    shotTimer = 2.2f;
                 }
                 break;
             case BossState.Ranged:
@@ -71,7 +72,7 @@ public class BossController : MonoBehaviour
                 if (shotTimer <= 0f)
                 {
                     ShootEggCluster();
-                    shotTimer = 1.2f;
+                    shotTimer = 2.5f;
                 }
                 break;
             case BossState.Enraged:
@@ -80,7 +81,7 @@ public class BossController : MonoBehaviour
                 {
                     ShootEggCluster();
                     if (miniEnemyPrefab != null) SpawnMiniEnemy();
-                    shotTimer = 0.35f;
+                    shotTimer = 1.8f;
                 }
                 break;
         }
@@ -107,12 +108,39 @@ public class BossController : MonoBehaviour
 
     private void ShootEggCluster()
     {
-        if (eggPrefab == null) return;
-        for (int i = -1; i <= 1; i++)
+        var player = FindFirstObjectByType<PlayerController>();
+        Vector2 direction = player != null
+            ? ((Vector2)player.transform.position - (Vector2)transform.position).normalized
+            : Vector2.down;
+        int spread = state == BossState.EggRain || state == BossState.Enraged ? 1 : 0;
+        float angleStep = state == BossState.Enraged ? 18f : 12f;
+        float speed = state == BossState.Enraged ? 4.5f : 3.5f;
+
+        for (int i = -spread; i <= spread; i++)
         {
-            var egg = Instantiate(eggPrefab, transform.position + Vector3.right * i * 0.45f, Quaternion.identity);
-            egg.transform.rotation = Quaternion.Euler(0f, 0f, i * -18f);
+            Vector2 eggDirection = state == BossState.Ranged || state == BossState.Enraged
+                ? Rotate(direction, i * angleStep)
+                : Rotate(Vector2.down, i * angleStep);
+            Vector3 position = transform.position + Vector3.right * i * 0.35f;
+            EnemyEgg egg;
+            if (eggPrefab != null)
+            {
+                egg = Instantiate(eggPrefab, position, Quaternion.identity);
+                egg.Configure(eggDirection, speed);
+            }
+            else
+            {
+                egg = EnemyEgg.Spawn(position, eggDirection, speed);
+            }
         }
+    }
+
+    private static Vector2 Rotate(Vector2 vector, float degrees)
+    {
+        float radians = degrees * Mathf.Deg2Rad;
+        float sine = Mathf.Sin(radians);
+        float cosine = Mathf.Cos(radians);
+        return new Vector2(vector.x * cosine - vector.y * sine, vector.x * sine + vector.y * cosine);
     }
 
     private void SpawnMiniEnemy()

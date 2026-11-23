@@ -18,10 +18,10 @@ MonoBehaviour:
   music: {fileID: 0}
   backgroundColor: {r: 0.12, g: 0.07, b: 0.18, a: 1}
   waves:
-  - {fileID: 0}
-  - {fileID: 0}
-  - {fileID: 0}
-  - {fileID: 0}
-  - {fileID: 0}
-  - {fileID: 0}
-  - {fileID: 0}
+  - {fileID: 11400000, guid: 07fc8eaf2acfdef45a43cb8f98e83f1f, type: 2}
+  - {fileID: 11400000, guid: c90b92a80ff3ce34c89837049c2f37fe, type: 2}
+  - {fileID: 11400000, guid: a3908a4b497ff8e438017f3395b4a023, type: 2}
+  - {fileID: 11400000, guid: 75c33564b4f7a7045b7e527564dc58dd, type: 2}
+  - {fileID: 11400000, guid: dfb9296ddae3db54ba81399d941e2f40, type: 2}
+  - {fileID: 11400000, guid: 22426cbc12a8e4c468ebb4087f58ec7c, type: 2}
+  - {fileID: 11400000, guid: 16dccf20774aec2489bd21a6835c2b1b, type: 2}

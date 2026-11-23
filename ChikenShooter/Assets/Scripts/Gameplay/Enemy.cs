@@ -15,8 +15,10 @@ public class Enemy : MonoBehaviour
     private Vector3 formationBase;
     private float phase;
     private bool returnedToFormation;
+    private bool canDropEggs = true;
+    private bool canDropPickups = true;
 
-    public void Configure(float health, float movementSpeed, float eggDropRate, EnemyEgg eggPrefab, Drop foodPrefab, Drop giftPrefab, bool diveBomber)
+    public void Configure(float health, float movementSpeed, float eggDropRate, EnemyEgg eggPrefab, Drop foodPrefab, Drop giftPrefab, bool diveBomber, bool canDropEggs = true, bool canDropPickups = true)
     {
         this.health = health;
         this.movementSpeed = movementSpeed;
@@ -25,6 +27,8 @@ public class Enemy : MonoBehaviour
         this.foodPrefab = foodPrefab;
         this.giftPrefab = giftPrefab;
         this.diveBomber = diveBomber;
+        this.canDropEggs = canDropEggs;
+        this.canDropPickups = canDropPickups;
         formationBase = transform.position;
         phase = Random.Range(0f, Mathf.PI * 2f);
     }
@@ -35,16 +39,34 @@ public class Enemy : MonoBehaviour
         if (diveBomber)
         {
             transform.position += (Vector3.down + Vector3.right * Mathf.Sin(Time.time * 3f + phase) * 0.5f) * movementSpeed * Time.deltaTime;
+            if (canDropEggs && eggTimer <= 0f)
+            {
+                eggTimer = eggDropRate * Random.Range(0.75f, 1.35f);
+                SpawnEgg();
+            }
             if (transform.position.y < -5.5f) Destroy(gameObject);
         }
         else
         {
             transform.position = formationBase + Vector3.right * Mathf.Sin(Time.time * movementSpeed * 0.45f + phase) * 0.45f;
-            if (eggTimer <= 0f)
+            if (canDropEggs && eggTimer <= 0f)
             {
                 eggTimer = eggDropRate * Random.Range(0.75f, 1.35f);
-                if (eggPrefab != null) Instantiate(eggPrefab, transform.position, Quaternion.identity);
+                SpawnEgg();
             }
+        }
+    }
+
+    private void SpawnEgg()
+    {
+        if (eggPrefab != null)
+        {
+            var egg = Instantiate(eggPrefab, transform.position, Quaternion.identity);
+            egg.Configure(Vector2.down, 3.5f);
+        }
+        else
+        {
+            EnemyEgg.Spawn(transform.position, Vector2.down);
         }
     }
 
@@ -67,11 +89,18 @@ public class Enemy : MonoBehaviour
             GameManager.Instance.NotifyStateChanged();
         }
 
-        float roll = Random.value;
-        if (roll < 0.12f && giftPrefab != null)
-            Instantiate(giftPrefab, transform.position, Quaternion.identity);
-        else if (roll < 0.38f && foodPrefab != null)
-            Instantiate(foodPrefab, transform.position, Quaternion.identity);
+        if (canDropPickups)
+        {
+            float roll = Random.value;
+            if (roll < 0.25f && giftPrefab != null)
+                Instantiate(giftPrefab, transform.position, Quaternion.identity);
+            else if (roll < 0.25f)
+                Drop.Spawn(transform.position, true);
+            else if (roll < 0.75f && foodPrefab != null)
+                Instantiate(foodPrefab, transform.position, Quaternion.identity);
+            else if (roll < 0.75f)
+                Drop.Spawn(transform.position, false);
+        }
 
         Destroy(gameObject);
     }

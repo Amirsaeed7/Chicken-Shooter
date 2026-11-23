@@ -3,15 +3,23 @@ using UnityEngine;
 
 public class RoundManager : MonoBehaviour
 {
+    private const int EnemyCountReduction = 1;
+    private const int ObstacleCountReduction = 1;
+    private const float EnemySpeedScale = 0.9f;
+    private const float EggIntervalScale = 1.15f;
+    private const float BossHealthScale = 0.9f;
+
     [SerializeField] private LevelDataSO levelData;
     [SerializeField] private EnemyEgg eggPrefab;
     [SerializeField] private Drop foodPrefab;
     [SerializeField] private Drop giftPrefab;
     [SerializeField] private BossController bossPrefab;
+    [SerializeField] private Obstacle obstaclePrefab;
 
     private int roundIndex;
     private bool roundComplete;
     private bool roundStarted;
+    private bool obstaclesSpawning;
 
     private void Start()
     {
@@ -37,6 +45,7 @@ public class RoundManager : MonoBehaviour
         if (wave.isBossRound)
         {
             SpawnBoss(wave);
+            StartObstacleWave(wave);
             roundStarted = true;
             yield break;
         }
@@ -45,15 +54,69 @@ public class RoundManager : MonoBehaviour
             SpawnAsteroids(wave);
         else
             SpawnFormation(wave);
+        StartObstacleWave(wave);
         roundStarted = true;
+    }
+
+    private void StartObstacleWave(WaveDataSO wave)
+    {
+        int count = Mathf.Max(3, wave.obstacleCount - ObstacleCountReduction);
+        obstaclesSpawning = true;
+        StartCoroutine(SpawnObstacles(wave, count));
+    }
+
+    private IEnumerator SpawnObstacles(WaveDataSO wave, int count)
+    {
+        var camera = Camera.main;
+        for (int i = 0; i < count; i++)
+        {
+            Vector3 position;
+            if (camera != null)
+            {
+                position = camera.ViewportToWorldPoint(new Vector3(Random.Range(0.1f, 0.9f), 1.08f, 0f));
+                position.z = 0f;
+            }
+            else
+            {
+                position = new Vector3(Random.Range(-4.5f, 4.5f), 6f, 0f);
+            }
+
+            SpawnObstacle(position, Random.Range(2f, 3.5f), Random.Range(1.5f, 3f));
+            if (i < count - 1)
+                yield return new WaitForSeconds(Mathf.Max(0.5f, wave.obstacleSpawnInterval));
+        }
+        obstaclesSpawning = false;
+    }
+
+    private Obstacle SpawnObstacle(Vector3 position, float fallSpeed, float health)
+    {
+        var obstacle = obstaclePrefab != null
+            ? Instantiate(obstaclePrefab, position, Quaternion.identity)
+            : CreateObstacle(position);
+        obstacle.Configure(fallSpeed, health);
+        return obstacle;
+    }
+
+    private Obstacle CreateObstacle(Vector3 position)
+    {
+        var go = new GameObject("Falling Asteroid");
+        go.transform.position = position;
+        go.transform.localScale = Vector3.one * Random.Range(0.65f, 1.05f);
+        var renderer = go.AddComponent<SpriteRenderer>();
+        renderer.sprite = RuntimeSpriteFactory.CreateAsteroid();
+        renderer.sortingOrder = 6;
+        go.AddComponent<CircleCollider2D>().isTrigger = true;
+        go.AddComponent<Rigidbody2D>().bodyType = RigidbodyType2D.Kinematic;
+        return go.AddComponent<Obstacle>();
     }
 
     private void SpawnFormation(WaveDataSO wave)
     {
-        int columns = wave.formation == FormationPattern.Rows ? Mathf.Min(wave.enemyCount, 8) : Mathf.CeilToInt(Mathf.Sqrt(wave.enemyCount));
-        int rows = Mathf.CeilToInt((float)wave.enemyCount / columns);
+        int enemyCount = Mathf.Max(1, wave.enemyCount - EnemyCountReduction);
+        int columns = wave.formation == FormationPattern.Rows ? Mathf.Min(enemyCount, 8) : Mathf.CeilToInt(Mathf.Sqrt(enemyCount));
+        int rows = Mathf.CeilToInt((float)enemyCount / columns);
 
-        for (int i = 0; i < wave.enemyCount; i++)
+        for (int i = 0; i < enemyCount; i++)
         {
             int row = i / columns;
             int column = i % columns;
@@ -61,7 +124,22 @@ public class RoundManager : MonoBehaviour
             var prefab = wave.enemyPrefab;
             var enemyObject = prefab != null ? Instantiate(prefab, position, Quaternion.identity) : CreateEnemy(position, wave);
             if (enemyObject.TryGetComponent(out Enemy enemy))
-                enemy.Configure(wave.enemyHealth, wave.movementSpeed, wave.eggDropRate, eggPrefab, foodPrefab, giftPrefab, i % 7 == 0);
+            {
+                var renderer = enemyObject.GetComponent<SpriteRenderer>();
+                if (renderer != null)
+                {
+                    renderer.sprite = RuntimeSpriteFactory.CreateChicken(wave.enemyType);
+                    renderer.color = Color.white;
+                }
+                enemy.Configure(
+                    Mathf.Max(1, wave.enemyHealth - 1),
+                    wave.movementSpeed * EnemySpeedScale,
+                    wave.eggDropRate * EggIntervalScale,
+                    eggPrefab,
+                    foodPrefab,
+                    giftPrefab,
+                    i % 7 == 0);
+            }
         }
     }
 
@@ -81,17 +159,22 @@ public class RoundManager : MonoBehaviour
         renderer.sortingOrder = 5;
         go.transform.localScale = Vector3.one * 0.75f;
         go.AddComponent<CircleCollider2D>().isTrigger = true;
+        go.AddComponent<Rigidbody2D>().bodyType = RigidbodyType2D.Kinematic;
         go.AddComponent<Enemy>();
         return go;
     }
 
     private void SpawnAsteroids(WaveDataSO wave)
     {
-        for (int i = 0; i < Mathf.Max(8, wave.enemyCount); i++)
+        int asteroidCount = Mathf.Max(7, wave.enemyCount - EnemyCountReduction);
+        for (int i = 0; i < asteroidCount; i++)
         {
-            float x = Mathf.Lerp(-6f, 6f, (i + 1f) / (Mathf.Max(8, wave.enemyCount) + 1f));
-            var asteroid = CreateEnemy(new Vector3(x, 3.8f + (i % 3) * 0.7f, 0f), wave);
-            asteroid.name = "Asteroid";
+            float x = Mathf.Lerp(-6f, 6f, (i + 1f) / (asteroidCount + 1f));
+            var asteroid = SpawnObstacle(
+                new Vector3(x, 6f + (i % 3) * 0.7f, 0f),
+                Random.Range(2f, 3.5f),
+                Random.Range(1.5f, 3f));
+            asteroid.name = "Falling Asteroid";
         }
     }
 
@@ -114,7 +197,13 @@ public class RoundManager : MonoBehaviour
         var bossObject = bossPrefab != null
             ? Instantiate(bossPrefab, new Vector3(0f, 3.5f, 0f), Quaternion.identity)
             : CreateBoss(wave);
-        bossObject.Configure(wave.bossHealth, eggPrefab, null);
+        var renderer = bossObject.GetComponent<SpriteRenderer>();
+        if (renderer != null)
+        {
+            renderer.sprite = RuntimeSpriteFactory.CreateBoss();
+            renderer.color = Color.white;
+        }
+        bossObject.Configure(wave.bossHealth * BossHealthScale, eggPrefab, null);
     }
 
     private BossController CreateBoss(WaveDataSO wave)
@@ -128,6 +217,7 @@ public class RoundManager : MonoBehaviour
         renderer.sortingOrder = 4;
         var collider = go.AddComponent<CircleCollider2D>();
         collider.isTrigger = true;
+        go.AddComponent<Rigidbody2D>().bodyType = RigidbodyType2D.Kinematic;
         return go.AddComponent<BossController>();
     }
 
@@ -135,7 +225,9 @@ public class RoundManager : MonoBehaviour
     {
         if (roundComplete || !roundStarted) return;
         if (FindObjectsByType<Enemy>(FindObjectsSortMode.None).Length == 0 &&
-            FindObjectsByType<BossController>(FindObjectsSortMode.None).Length == 0)
+            FindObjectsByType<BossController>(FindObjectsSortMode.None).Length == 0 &&
+            !obstaclesSpawning &&
+            FindObjectsByType<Obstacle>(FindObjectsSortMode.None).Length == 0)
         {
             CompleteRound();
         }

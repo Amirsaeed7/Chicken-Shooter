@@ -16,4 +16,6 @@ public class WaveDataSO : ScriptableObject
     public bool isBossRound;
     public int enemyHealth = 1;
     public float bossHealth = 300f;
+    public int obstacleCount = 4;
+    public float obstacleSpawnInterval = 1.5f;
 }

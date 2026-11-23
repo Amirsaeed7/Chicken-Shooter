@@ -50,6 +50,11 @@ public class Projectile : MonoBehaviour, IPooledObject
                 boss.TakeDamage(damage);
                 ObjectPool.Instance?.Despawn(gameObject);
             }
+            else if (other.TryGetComponent(out Obstacle obstacle))
+            {
+                obstacle.TakeDamage(damage);
+                ObjectPool.Instance?.Despawn(gameObject);
+            }
         }
         else if (other.TryGetComponent(out PlayerController player))
         {

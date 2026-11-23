@@ -87,6 +87,74 @@ public static class ChickenShooterProjectGenerator
         return AssetDatabase.LoadAssetAtPath<Sprite>(path);
     }
 
+    private static Sprite CreateIconSprite(string name, int size, System.Func<int, int, Color> pixelColor)
+    {
+        var path = $"Assets/Sprites/{name}.png";
+        var existing = AssetDatabase.LoadAssetAtPath<Sprite>(path);
+        if (existing != null) return existing;
+
+        var texture = new Texture2D(size, size, TextureFormat.RGBA32, false);
+        var pixels = new Color[size * size];
+        for (int y = 0; y < size; y++)
+        for (int x = 0; x < size; x++)
+            pixels[y * size + x] = pixelColor(x, y);
+
+        texture.SetPixels(pixels);
+        texture.Apply();
+        File.WriteAllBytes(Path.Combine(Application.dataPath, "Sprites", $"{name}.png"), texture.EncodeToPNG());
+        AssetDatabase.ImportAsset(path, ImportAssetOptions.ForceUpdate);
+        var importer = AssetImporter.GetAtPath(path) as TextureImporter;
+        if (importer != null)
+        {
+            importer.textureType = TextureImporterType.Sprite;
+            importer.spritePixelsPerUnit = size;
+            importer.filterMode = FilterMode.Point;
+            importer.SaveAndReimport();
+        }
+        return AssetDatabase.LoadAssetAtPath<Sprite>(path);
+    }
+
+    private static Sprite CreateHeartSprite()
+    {
+        return CreateIconSprite("HUD_Heart", 64, (x, y) =>
+        {
+            float px = (x - 31.5f) / 25f;
+            float py = (y - 31.5f) / 25f;
+            float outer = Mathf.Pow(px * px + py * py - 1f, 3f) - px * px * py * py * py;
+            if (outer > 0f) return Color.clear;
+
+            float innerX = px * 1.12f;
+            float innerY = py * 1.12f;
+            float inner = Mathf.Pow(innerX * innerX + innerY * innerY - 1f, 3f) -
+                          innerX * innerX * innerY * innerY * innerY;
+            if (inner > 0f) return new Color(0.35f, 0.02f, 0.08f, 1f);
+            return Color.Lerp(new Color(1f, 0.17f, 0.3f), new Color(1f, 0.52f, 0.58f), y / 64f);
+        });
+    }
+
+    private static Sprite CreateBombSprite()
+    {
+        return CreateIconSprite("HUD_Bomb", 64, (x, y) =>
+        {
+            float dx = x - 29f;
+            float dy = y - 28f;
+            float radius = Mathf.Sqrt(dx * dx + dy * dy);
+            if (radius <= 23f)
+            {
+                if (radius >= 20f) return new Color(0.85f, 0.9f, 1f);
+                if (dx < -5f && dy > 2f) return new Color(0.55f, 0.75f, 0.9f);
+                return new Color(0.12f, 0.2f, 0.32f);
+            }
+
+            float fuseX = 0.62f * (y - 49f) + 35f;
+            if (y >= 46f && y <= 56f && Mathf.Abs(x - fuseX) <= 3f)
+                return new Color(1f, 0.75f, 0.2f);
+            if ((x - 39f) * (x - 39f) + (y - 54f) * (y - 54f) <= 30f)
+                return new Color(1f, 0.3f, 0.08f);
+            return Color.clear;
+        });
+    }
+
     private static void ConfigureInputActions()
     {
         var asset = AssetDatabase.LoadAssetAtPath<InputActionAsset>("Assets/InputSystem_Actions.inputactions");
@@ -156,8 +224,9 @@ public static class ChickenShooterProjectGenerator
                                        (level == 2 && (round == 3 || round == 6));
                 wave.isBossRound = round == roundCounts[level] - 1;
                 wave.bossHealth = 300f + level * 180f + round * 10f;
-                EnsureAsset(wave, $"Assets/Data/Waves/Level{level + 1}_Round{round + 1}.asset");
-                waves[round] = wave;
+                wave.obstacleCount = 3 + level;
+                wave.obstacleSpawnInterval = Mathf.Max(1f, 1.6f - level * 0.1f - round * 0.02f);
+                waves[round] = EnsureAsset(wave, $"Assets/Data/Waves/Level{level + 1}_Round{round + 1}.asset");
             }
 
             var levelAsset = ScriptableObject.CreateInstance<LevelDataSO>();
@@ -172,7 +241,7 @@ public static class ChickenShooterProjectGenerator
         }
     }
 
-    private static void EnsureAsset(ScriptableObject asset, string path)
+    private static T EnsureAsset<T>(T asset, string path) where T : ScriptableObject
     {
         var existing = AssetDatabase.LoadAssetAtPath<Object>(path);
         if (existing != null)
@@ -182,9 +251,11 @@ public static class ChickenShooterProjectGenerator
                 EditorUtility.CopySerialized(asset, existingData);
                 EditorUtility.SetDirty(existingData);
             }
-            return;
+            Object.DestroyImmediate(asset);
+            return existing as T;
         }
         AssetDatabase.CreateAsset(asset, path);
+        return asset;
     }
 
     private static void CreatePrefabs()
@@ -196,6 +267,22 @@ public static class ChickenShooterProjectGenerator
         CreateEnemyPrefabs();
         CreateBossPrefab();
         CreatePlayerPrefab();
+        CreateObstaclePrefab();
+        foreach (var path in new[]
+        {
+            "Assets/Prefabs/LaserProjectile.prefab",
+            "Assets/Prefabs/EnemyEgg.prefab",
+            "Assets/Prefabs/FoodDrop.prefab",
+            "Assets/Prefabs/WeaponGift.prefab",
+            "Assets/Prefabs/StandardChicken.prefab",
+            "Assets/Prefabs/ArmoredChicken.prefab",
+            "Assets/Prefabs/CyberChicken.prefab",
+            "Assets/Prefabs/Asteroid.prefab",
+            "Assets/Prefabs/StageBoss.prefab",
+            "Assets/Prefabs/PlayerShip.prefab",
+            "Assets/Prefabs/Obstacle.prefab"
+        })
+            EnsureKinematicBody(path);
     }
 
     private static GameObject CreateCirclePrefab(string name, string path, Color color, float scale)
@@ -286,6 +373,62 @@ public static class ChickenShooterProjectGenerator
         go.AddComponent<PlayerController>();
     }
 
+    private static void CreateObstaclePrefab()
+    {
+        const string path = "Assets/Prefabs/Obstacle.prefab";
+        var existing = AssetDatabase.LoadAssetAtPath<GameObject>(path);
+        if (existing == null)
+        {
+            var go = new GameObject("Space Rock");
+            go.transform.localScale = Vector3.one * 0.85f;
+            var renderer = go.AddComponent<SpriteRenderer>();
+            renderer.sprite = CreateSprite("SpaceRock", new Color(0.56f, 0.48f, 0.44f));
+            renderer.sortingOrder = 6;
+            go.AddComponent<CircleCollider2D>().isTrigger = true;
+            go.AddComponent<Rigidbody2D>().bodyType = RigidbodyType2D.Kinematic;
+            go.AddComponent<Obstacle>();
+            SavePrefab(go, path);
+            return;
+        }
+
+        var root = PrefabUtility.LoadPrefabContents(path);
+        try
+        {
+            var renderer = root.GetComponent<SpriteRenderer>();
+            renderer.sprite = CreateSprite("SpaceRock", new Color(0.56f, 0.48f, 0.44f));
+            renderer.color = Color.white;
+            if (root.GetComponent<Collider2D>() == null)
+                root.AddComponent<CircleCollider2D>().isTrigger = true;
+            if (root.GetComponent<Obstacle>() == null)
+                root.AddComponent<Obstacle>();
+            PrefabUtility.SaveAsPrefabAsset(root, path);
+        }
+        finally
+        {
+            PrefabUtility.UnloadPrefabContents(root);
+        }
+    }
+
+    private static void EnsureKinematicBody(string path)
+    {
+        if (AssetDatabase.LoadAssetAtPath<GameObject>(path) == null) return;
+        var root = PrefabUtility.LoadPrefabContents(path);
+        try
+        {
+            if (root.GetComponent<Collider2D>() == null)
+                root.AddComponent<CircleCollider2D>().isTrigger = true;
+            var body = root.GetComponent<Rigidbody2D>();
+            if (body == null) body = root.AddComponent<Rigidbody2D>();
+            body.bodyType = RigidbodyType2D.Kinematic;
+            body.gravityScale = 0f;
+            PrefabUtility.SaveAsPrefabAsset(root, path);
+        }
+        finally
+        {
+            PrefabUtility.UnloadPrefabContents(root);
+        }
+    }
+
     private static void CreateScenes()
     {
         CreateMenuScene();
@@ -332,6 +475,7 @@ public static class ChickenShooterProjectGenerator
         var food = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/FoodDrop.prefab");
         var gift = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/WeaponGift.prefab");
         var boss = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/StageBoss.prefab");
+        var obstacle = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/Obstacle.prefab");
 
         var levelData = AssetDatabase.LoadAssetAtPath<LevelDataSO>($"Assets/Data/Levels/Level{levelIndex}Data.asset");
         var roundSo = new SerializedObject(roundManager);
@@ -340,6 +484,7 @@ public static class ChickenShooterProjectGenerator
         roundSo.FindProperty("foodPrefab").objectReferenceValue = food != null ? food.GetComponent<Drop>() : null;
         roundSo.FindProperty("giftPrefab").objectReferenceValue = gift != null ? gift.GetComponent<Drop>() : null;
         roundSo.FindProperty("bossPrefab").objectReferenceValue = boss != null ? boss.GetComponent<BossController>() : null;
+        roundSo.FindProperty("obstaclePrefab").objectReferenceValue = obstacle != null ? obstacle.GetComponent<Obstacle>() : null;
         roundSo.ApplyModifiedPropertiesWithoutUndo();
 
         CreateHud();
@@ -424,20 +569,50 @@ public static class ChickenShooterProjectGenerator
         var hud = hudObject.AddComponent<HudController>();
 
         var levelRound = CreateText(canvas.transform, "Level 1 - Round 1", 20, new Vector2(-430, 260));
-        var lives = CreateText(canvas.transform, "Lives: 3", 20, new Vector2(-430, 220));
         var score = CreateText(canvas.transform, "Score: 0", 20, new Vector2(-430, 180));
-        var bombs = CreateText(canvas.transform, "Bombs: 2", 20, new Vector2(430, 260));
+        var power = CreateText(canvas.transform, "Power: 1/3", 20, new Vector2(-430, 120));
+        power.rectTransform.sizeDelta = new Vector2(280f, 40f);
+        var foodLabel = CreateText(canvas.transform, "Food: 0%", 20, new Vector2(-430, -222));
+        foodLabel.rectTransform.sizeDelta = new Vector2(280f, 40f);
+        var lives = CreateIconRow(canvas.transform, "Life", CreateHeartSprite(), -520f, 220f);
+        var bombs = CreateIconRow(canvas.transform, "Bomb", CreateBombSprite(), 390f, 260f);
         var food = CreateSlider(canvas.transform, "Food Progress", new Vector2(-430, -260), new Vector2(200, 20));
         var boss = CreateSlider(canvas.transform, "Boss Health", new Vector2(0, 300), new Vector2(500, 22));
 
         var so = new SerializedObject(hud);
         so.FindProperty("levelRoundText").objectReferenceValue = levelRound;
-        so.FindProperty("livesText").objectReferenceValue = lives;
         so.FindProperty("scoreText").objectReferenceValue = score;
-        so.FindProperty("bombsText").objectReferenceValue = bombs;
+        so.FindProperty("powerText").objectReferenceValue = power;
+        so.FindProperty("foodText").objectReferenceValue = foodLabel;
+        so.FindProperty("lifeIcons").arraySize = lives.Length;
+        so.FindProperty("bombIcons").arraySize = bombs.Length;
+        for (int i = 0; i < lives.Length; i++)
+            so.FindProperty("lifeIcons").GetArrayElementAtIndex(i).objectReferenceValue = lives[i];
+        for (int i = 0; i < bombs.Length; i++)
+            so.FindProperty("bombIcons").GetArrayElementAtIndex(i).objectReferenceValue = bombs[i];
         so.FindProperty("foodProgress").objectReferenceValue = food;
         so.FindProperty("bossHealth").objectReferenceValue = boss;
         so.ApplyModifiedPropertiesWithoutUndo();
+    }
+
+    private static Image[] CreateIconRow(Transform parent, string name, Sprite sprite, float startX, float y)
+    {
+        var icons = new Image[3];
+        for (int i = 0; i < icons.Length; i++)
+        {
+            var iconObject = new GameObject($"{name} Icon {i + 1}");
+            iconObject.transform.SetParent(parent, false);
+            var rect = iconObject.AddComponent<RectTransform>();
+            rect.anchorMin = new Vector2(0.5f, 0.5f);
+            rect.anchorMax = new Vector2(0.5f, 0.5f);
+            rect.anchoredPosition = new Vector2(startX + i * 48f, y);
+            rect.sizeDelta = new Vector2(42f, 42f);
+            var image = iconObject.AddComponent<Image>();
+            image.sprite = sprite;
+            image.preserveAspect = true;
+            icons[i] = image;
+        }
+        return icons;
     }
 
     private static void CreatePauseMenu()

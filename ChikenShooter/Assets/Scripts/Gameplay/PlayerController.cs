@@ -1,6 +1,7 @@
 using System.Collections;
 using UnityEngine;
 using UnityEngine.InputSystem;
+using UnityEngine.UI;
 
 [RequireComponent(typeof(Collider2D))]
 public class PlayerController : MonoBehaviour
@@ -13,12 +14,15 @@ public class PlayerController : MonoBehaviour
     private float invincibleTimer;
     private SpriteRenderer spriteRenderer;
     private float fireTimer;
+    private int lastBombUseFrame = -1;
 
     public int Lives => GameManager.Instance.Data.lives;
 
     private void Awake()
     {
         spriteRenderer = GetComponent<SpriteRenderer>();
+        if (spriteRenderer != null)
+            spriteRenderer.sprite = RuntimeSpriteFactory.CreateSpaceship();
         if (playerInput == null) playerInput = GetComponent<PlayerInput>();
     }
 
@@ -27,13 +31,10 @@ public class PlayerController : MonoBehaviour
         if (playerInput != null && playerInput.actions != null)
         {
             var move = playerInput.actions.FindAction("Move");
-            var attack = playerInput.actions.FindAction("Attack");
             var bomb = playerInput.actions.FindAction("Bomb");
-            var pause = playerInput.actions.FindAction("Pause");
             if (move != null) move.performed += OnMove;
             if (move != null) move.canceled += OnMove;
             if (bomb != null) bomb.performed += OnBomb;
-            if (pause != null) pause.performed += OnPause;
         }
     }
 
@@ -43,14 +44,12 @@ public class PlayerController : MonoBehaviour
         {
             var move = playerInput.actions.FindAction("Move");
             var bomb = playerInput.actions.FindAction("Bomb");
-            var pause = playerInput.actions.FindAction("Pause");
             if (move != null)
             {
                 move.performed -= OnMove;
                 move.canceled -= OnMove;
             }
             if (bomb != null) bomb.performed -= OnBomb;
-            if (pause != null) pause.performed -= OnPause;
         }
     }
 
@@ -61,6 +60,13 @@ public class PlayerController : MonoBehaviour
 
     private void Update()
     {
+        if (Keyboard.current != null && Keyboard.current.xKey.wasPressedThisFrame)
+            UseBomb();
+
+        if (Keyboard.current != null &&
+            (Keyboard.current.escapeKey.wasPressedThisFrame || Keyboard.current.pKey.wasPressedThisFrame))
+            FindFirstObjectByType<PauseMenu>()?.Toggle();
+
         transform.Translate(moveInput * moveSpeed * Time.deltaTime, Space.World);
         var bounds = Camera.main.ViewportToWorldPoint(new Vector3(0.07f, 0.07f, 0f));
         var max = Camera.main.ViewportToWorldPoint(new Vector3(0.93f, 0.93f, 0f));
@@ -133,8 +139,19 @@ public class PlayerController : MonoBehaviour
 
     private void OnBomb(InputAction.CallbackContext context)
     {
-        if (!context.performed || GameManager.Instance.Data.bombs <= 0) return;
+        if (context.performed)
+            UseBomb();
+    }
+
+    private void UseBomb()
+    {
+        if (Time.timeScale <= 0f || lastBombUseFrame == Time.frameCount ||
+            GameManager.Instance == null || GameManager.Instance.Data.bombs <= 0)
+            return;
+
+        lastBombUseFrame = Time.frameCount;
         GameManager.Instance.Data.bombs--;
+        StartCoroutine(ShowBombExplosion());
         foreach (var enemy in FindObjectsByType<Enemy>(FindObjectsSortMode.None))
         {
             if (enemy.gameObject.activeInHierarchy)
@@ -148,12 +165,43 @@ public class PlayerController : MonoBehaviour
         foreach (var egg in FindObjectsByType<EnemyEgg>(FindObjectsSortMode.None))
             egg.DestroyEgg();
         GameManager.Instance.NotifyStateChanged();
+        GameManager.Instance.SaveDataToDisk();
     }
 
-    private void OnPause(InputAction.CallbackContext context)
+    private IEnumerator ShowBombExplosion()
     {
-        if (!context.performed) return;
-        FindFirstObjectByType<PauseMenu>()?.Toggle();
+        var canvas = FindFirstObjectByType<Canvas>();
+        if (canvas == null)
+        {
+            Debug.LogWarning("Could not display the bomb explosion because the scene has no Canvas.");
+            yield break;
+        }
+
+        var explosionObject = new GameObject("Bomb Explosion", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+        explosionObject.transform.SetParent(canvas.transform, false);
+        var rect = explosionObject.GetComponent<RectTransform>();
+        rect.anchorMin = new Vector2(0.5f, 0.5f);
+        rect.anchorMax = new Vector2(0.5f, 0.5f);
+        rect.anchoredPosition = Vector2.zero;
+        rect.sizeDelta = new Vector2(560f, 560f);
+
+        var image = explosionObject.GetComponent<Image>();
+        image.sprite = RuntimeSpriteFactory.CreateExplosion();
+        image.preserveAspect = true;
+        image.raycastTarget = false;
+
+        const float duration = 0.8f;
+        float elapsed = 0f;
+        while (elapsed < duration)
+        {
+            elapsed += Time.unscaledDeltaTime;
+            float progress = Mathf.Clamp01(elapsed / duration);
+            float scale = Mathf.Lerp(0.2f, 1.3f, progress);
+            rect.localScale = Vector3.one * scale;
+            image.color = new Color(1f, 1f, 1f, 1f - progress);
+            yield return null;
+        }
+        Destroy(explosionObject);
     }
 
     public void TakeDamage()
